@@ -277,8 +277,8 @@ sub decode_hierarchy_device{
 	my $current_pat = shift;
 	my %dev = %{decode_json($jso)};
 
-	# Skip MMs
-	if($current_pat eq "/mm"){ return; }
+# Skip MMs
+#if($current_pat eq "/mm"){ return; }
 
 	$devices{$current_pat . '/' . $dev{mac}}{mac}  = $dev{mac};
 	$devices{$current_pat . '/' . $dev{mac}}{type} = $dev{type};
@@ -454,14 +454,16 @@ sub get_debugged_users{
 	config_path => $cur_path,
 	method => 'GET'))};
 
-	my @user_list = @{$r{'_data'}{'log_lvl_user_debug'}};
+	if(defined($r{'_data'}{'log_lvl_user_debug'})){
 
-	for(my $i = 0; $i < @user_list; $i++){
-		my %s = %{$user_list[$i]};
+		my @user_list = @{$r{'_data'}{'log_lvl_user_debug'}};
 
-		if($s{log_lvl} eq "debugging"){
-			$raw_data{$s{mac}}{type} = 'debugged user';
+		for(my $i = 0; $i < @user_list; $i++){
+			my %s = %{$user_list[$i]};
+
+			if($s{log_lvl} eq "debugging"){
+				$raw_data{$s{mac}}{type} = 'debugged user';
+			}
 		}
 	}
-
 }
