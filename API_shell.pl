@@ -277,8 +277,8 @@ sub decode_hierarchy_device{
 	my $current_pat = shift;
 	my %dev = %{decode_json($jso)};
 
-# Skip MMs
-#if($current_pat eq "/mm"){ return; }
+	# Skip MMs
+	if($current_pat eq "/mm"){ return; }
 
 	$devices{$current_pat . '/' . $dev{mac}}{mac}  = $dev{mac};
 	$devices{$current_pat . '/' . $dev{mac}}{type} = $dev{type};
