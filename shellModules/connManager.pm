@@ -65,6 +65,7 @@ sub request{
 
 	my $response = $ua->request($req);
 
+
 	if($response->is_success() ){
 		return $response->decoded_content();
 	}
@@ -85,8 +86,7 @@ sub get_UID{
                 return $self->{hosts}{$ip}{UID};
 	}else{
 		&login_to_controller($self, $ip);
-		&read_cookie($self, $ip);
-		return $self->{hosts}{$ip}{UID};
+		return &read_cookie($self, $ip);
 	}
 
 }
@@ -103,15 +103,12 @@ sub read_cookie{
 		if($line =~ /$ip/){
 			$line =~ /SESSION\=([^;]+)/;
 			$self->{hosts}{$ip}{UID} = $1;
-
 		}
 	}	
 
 	close(CKI);
 
 	return $self->{hosts}{$ip}{UID};
-
-
 }
 
 
@@ -127,16 +124,29 @@ sub login_to_controller{
 	my $ua = $self->{user_agent};
 
 
-	$ua->post($url, { opcode   => 'login',
-			url      => 'login.html',
-			needxml  => '0',
-			uid      => $self->{username},
-			passwd   => $self->{password} });
-
-	$self->{cookie_jar}->save();
+	my $response = $ua->post($url, {opcode   => 'login',
+					url      => 'login.html',
+					needxml  => '0',
+					uid      => $self->{username},
+					passwd   => $self->{password} });
 
 
-	return 1;
+
+	if(defined($response->header('set-cookie'))){
+		if($response->header('set-cookie') =~ /SESSION\=\;/){
+			print "Bad credentials. Please run the program again\n";
+			exit;
+		}
+		$response->header('set-cookie') =~ /SESSION\=([^;]+)/;
+		$self->{hosts}{$ip}{UID} = $1;
+		$self->{cookie_jar}->save();
+		return 1;
+	}
+
+
+	print "Unknown issue logging into the controller\n";
+	exit;
+	
 }
 
 
