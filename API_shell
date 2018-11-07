@@ -267,7 +267,7 @@ sub decode_hierarchy{
 	}elsif($hier{name} eq 'mm'){
     		# dont touch backup mm
     		return;
-	else{
+	}else{
 		$current_path .= '/' . $hier{name};
 	}
 

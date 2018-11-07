@@ -36,7 +36,7 @@ sub new{
 	$self->{hosts}      = \%hosts;
 	$self->{cookie_jar} = $cookie_jar;
 	
-	$self->trace($self);
+	#$self->trace($self);
 	bless $self, $class;
 	return $self;
 }
