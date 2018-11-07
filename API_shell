@@ -11,6 +11,7 @@ if($^O ne "MSWin32"){
 use Term::ReadKey;
 use Term::ReadLine;
 use POSIX;
+use lib '.';
 use shellModules::DispManager;
 use shellModules::connManager;
 
@@ -55,8 +56,8 @@ my %raw_data;
 
 
 
-
-my $api_int = shellModules::connManager->new($username, $password, $path_suffix, $cookie_file);
+# dbg level > 5 will set tracing in connManager for request/response
+my $api_int = shellModules::connManager->new($username, $password, $path_suffix, $cookie_file, $dbg);
 
 
 if($standalone_mode == 1){
@@ -263,7 +264,10 @@ sub decode_hierarchy{
 		$current_path = '/';
 	}elsif($current_path eq '/'){
 		$current_path .= $hier{name};
-	}else{
+	}elsif($hier{name} eq 'mm'){
+    		# dont touch backup mm
+    		return;
+	else{
 		$current_path .= '/' . $hier{name};
 	}
 
