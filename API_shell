@@ -5,7 +5,9 @@ use strict;
 use warnings;
 use JSON;
 use Data::Dumper;
-#use Net::SSH::Perl;
+if($^O ne "MSWin32"){
+	use Net::SSH::Perl;
+}
 use Term::ReadKey;
 use Term::ReadLine;
 use POSIX;
@@ -17,8 +19,16 @@ use Time::HiRes qw(time);
 use constant DATETIME => strftime("%Y-%m-%d_%H-%M-%S", localtime);
 
 my $mm_ip;
+my $standalone_mode = 0;
+
+
 if(defined($ARGV[0])){ 
-	$mm_ip = $ARGV[0];
+	if($ARGV[0] eq "-s"){
+		$standalone_mode = 1;
+		&read_standalone($ARGV[1]);
+	}else{
+		$mm_ip = $ARGV[0];
+	}
 }else{
 	print "MM IP address: ";
 	$mm_ip = <STDIN>;
@@ -49,50 +59,54 @@ my %raw_data;
 my $api_int = shellModules::connManager->new($username, $password, $path_suffix, $cookie_file);
 
 
+if($standalone_mode == 1){
 
 
-&decode_hierarchy(&exec(method     => 'GET',
-			ctrl_ip         => $mm_ip,
-			command_url => 'node_hierarchy'), '');
+}else{
 
+	&decode_hierarchy(&exec(method     => 'GET',
+				ctrl_ip         => $mm_ip,
+				command_url => 'node_hierarchy'), '');
 
-
-foreach my $dev_path (keys %devices){
+	foreach my $dev_path (keys %devices){
 # Fetch Controller VLAN from MM
-	my %ctrl_vlan_tmp = %{decode_json(&exec(method  => 'GET',
-				ctrl_ip          => $mm_ip,
-				config_path => $dev_path,
-				command_url => 'ctrl_ip'))};
+		my %ctrl_vlan_tmp = %{decode_json(&exec(method  => 'GET',
+					ctrl_ip          => $mm_ip,
+					config_path => $dev_path,
+					command_url => 'ctrl_ip'))};
 
-
-	$devices{$dev_path}{ctrl_vlan} = $ctrl_vlan_tmp{'_data'}{'ctrl_ip'}{'id'};
-
+		$devices{$dev_path}{ctrl_vlan} = $ctrl_vlan_tmp{'_data'}{'ctrl_ip'}{'id'};
 
 
 # Fetch IP from VLAN 
-	my %int_vlan_tmp = %{decode_json(&exec(method      => 'GET',
-				ctrl_ip          => $mm_ip,
-				config_path => $dev_path,
-				command_url => 'int_vlan'))}; 
+		my %int_vlan_tmp = %{decode_json(&exec(method      => 'GET',
+					ctrl_ip          => $mm_ip,
+					config_path => $dev_path,
+					command_url => 'int_vlan'))}; 
 
 
+		my @int_vlan = @{$int_vlan_tmp{'_data'}{'int_vlan'}};
 
-	my @int_vlan = @{$int_vlan_tmp{'_data'}{'int_vlan'}};
+		foreach my $h (@int_vlan){
+			my %i = %{$h};
+			if($i{id} ==  $devices{$dev_path}{ctrl_vlan}){
+				$devices{$dev_path}{ctrl_ip} = $i{'int_vlan_ip'}{'ipaddr'};
+			}
 
-	foreach my $h (@int_vlan){
-		my %i = %{$h};
-		if($i{id} ==  $devices{$dev_path}{ctrl_vlan}){
-			$devices{$dev_path}{ctrl_ip} = $i{'int_vlan_ip'}{'ipaddr'};
 		}
 
 	}
 
+	&get_debugged_users();
 }
-
 
 print "\n\nWelcome to API_shell v$version\n";
 print "Send feedback to Guillaume Germain (ggermain at hpe.com)\n";
-print "MM - " . $mm_ip . "\n";
+if($standalone_mode == 1){
+	print "Running in standalone mode\n";
+}else{
+	print "MM - " . $mm_ip . "\n";
+}
 foreach my $dev_name (keys %devices){
 	print $devices{$dev_name}{name} . " (" . $devices{$dev_name}{ctrl_ip} . ") " . $dev_name . "\n";
 
@@ -102,7 +116,6 @@ print "\n";
 my $term = new Term::ReadLine 'Demo';
 
 
-&get_debugged_users();
 
 # Step into the main loop
 while(1){
@@ -320,7 +333,7 @@ sub find_User(){
 
 	&debug("Searching for user $info", 2);
 	my %res = %{&get_command(ctrl_ip => [$mm_ip],
-	cmd     => $cmd)};
+			cmd     => $cmd)};
 
 	my %result = %{decode_json($res{out}{$mm_ip})};
 
@@ -348,7 +361,7 @@ sub find_AP(){
 	my $ap_name = shift;
 
 	my %result = %{&get_command(ctrl_ip => [$mm_ip],
-	cmd     => "show ap database | include $ap_name")};
+			cmd     => "show ap database | include $ap_name")};
 
 
 
@@ -400,7 +413,7 @@ sub get_command(){
 		&debug("Fetching " . $argu{cmd} . " from " . $ip, 2);
 
 		my $curl_output = $api_int->request(ctrl_ip => $ip, 
-			cmd     => $argu{cmd});	
+				cmd     => $argu{cmd});	
 
 
 		&debug("Command output for $ip\n" . $curl_output, 4);
@@ -450,9 +463,9 @@ sub debug(){
 sub get_debugged_users{
 
 	my %r = %{decode_json(&exec(command_url => 'log_lvl_user_debug',
-	ctrl_ip => $mm_ip,
-	config_path => $cur_path,
-	method => 'GET'))};
+				ctrl_ip => $mm_ip,
+				config_path => $cur_path,
+				method => 'GET'))};
 
 	if(defined($r{'_data'}{'log_lvl_user_debug'})){
 
@@ -466,4 +479,29 @@ sub get_debugged_users{
 			}
 		}
 	}
+}
+
+
+sub read_standalone(){
+	my $file;
+
+	if(defined($_[0])){
+		$file = $_[0];
+	}else{
+		$file = "standalone_ip_list";
+	}
+
+	open(FIC, $file);
+
+	foreach my $line (<FIC>){
+		chomp($line);
+		my @a = split(",", $line);
+		$devices{'/md/' . $a[0]}{name} = $a[0];
+		$devices{'/md/' . $a[0]}{ctrl_ip} = $a[1];
+	}
+
+	close(FIC);
+
+
+
 }
