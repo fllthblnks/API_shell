@@ -8,13 +8,16 @@ use LWP::UserAgent;
 use Data::Dumper;
 use HTTP::Cookies;
 
+use constant TRACE_DBG_LEVEL => 5;
+use constant ALWAYS_TRACE => 1;
 
 sub new{
 	my $class = shift;
 	my $self = { username    => shift,
 		     password    => shift,
 		     path_suffix => shift,
-		     cookie_file => shift};
+		     cookie_file => shift,
+		     dbg_level => shift};
 	my %hosts;
 
 	my $cookie_jar = HTTP::Cookies->new(
@@ -32,12 +35,19 @@ sub new{
 	$self->{user_agent} = $ua;
 	$self->{hosts}      = \%hosts;
 	$self->{cookie_jar} = $cookie_jar;
-
+	
+	$self->trace($self);
 	bless $self, $class;
 	return $self;
 }
 
-
+sub trace{
+  my $self = shift;
+  my $obj = shift;
+  my $always = shift || 0;
+  return if not $always and $self->{dbg_level} < TRACE_DBG_LEVEL;
+  print("trace: " . Dumper($obj));
+}
 
 sub request{
 	my $self = shift;
@@ -58,16 +68,22 @@ sub request{
 		$url = "https://" . $argu{ctrl_ip} . ":4343/" . $self->{path_suffix} . $argu{command_url} . "?UIDARUBA=$UID";
 	}
 
-
+	$self->trace($url);
 	my $req = HTTP::Request->new(GET => $url);
 	$req->header( 'Content-Type' => 'application/json' );
 
 
 	my $response = $ua->request($req);
-
+	$self->trace($response);
 
 	if($response->is_success() ){
-		return $response->decoded_content();
+		my $content = $response->decoded_content();
+    		if ($content =~ /Error/){
+      			$self->trace("-------- ERROR ------", ALWAYS_TRACE);
+      			$self->trace($url, ALWAYS_TRACE);
+      			$self->trace($content, ALWAYS_TRACE);
+    		}
+		return $content;
 	}
 
 	&login_to_controller($self, $argu{ctrl_ip});
