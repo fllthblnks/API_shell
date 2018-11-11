@@ -36,7 +36,6 @@ sub new{
 	$self->{hosts}      = \%hosts;
 	$self->{cookie_jar} = $cookie_jar;
 	
-	#$self->trace($self);
 	bless $self, $class;
 	return $self;
 }
@@ -46,7 +45,7 @@ sub trace{
   my $obj = shift;
   my $always = shift || 0;
   return if not $always and $self->{dbg_level} < TRACE_DBG_LEVEL;
-  print("trace: " . Dumper($obj));
+  print STDERR ("trace: " . Dumper($obj));
 }
 
 sub request{
@@ -78,11 +77,12 @@ sub request{
 
 	if($response->is_success() ){
 		my $content = $response->decoded_content();
-    		if ($content =~ /Error/){
-      			$self->trace("-------- ERROR ------", ALWAYS_TRACE);
-      			$self->trace($url, ALWAYS_TRACE);
-      			$self->trace($content, ALWAYS_TRACE);
-    		}
+		# If we look at logs on the controller and the "Error" string is there, this will trigger. Need to find a better way to do this
+    		#if ($content =~ /Error/){
+      		#	$self->trace("-------- ERROR ------", ALWAYS_TRACE);
+      		#	$self->trace($url, ALWAYS_TRACE);
+      		#	$self->trace($content, ALWAYS_TRACE);
+    		#}
 		return $content;
 	}
 
@@ -150,7 +150,7 @@ sub login_to_controller{
 
 	if(defined($response->header('set-cookie'))){
 		if($response->header('set-cookie') =~ /SESSION\=\;/){
-			print "Bad credentials. Please run the program again\n";
+			print STDERR "Bad credentials. Please run the program again\n";
 			exit;
 		}
 		$response->header('set-cookie') =~ /SESSION\=([^;]+)/;
@@ -160,7 +160,7 @@ sub login_to_controller{
 	}
 
 
-	print "Unknown issue logging into the controller\n";
+	print STDERR "Unknown issue logging into the controller\n";
 	exit;
 	
 }
