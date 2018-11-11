@@ -2,7 +2,7 @@
 # ArubaOS 8.0 API Shell
 
 use strict;
-use warnings;
+use warnings 'all';
 use JSON;
 use Data::Dumper;
 if($^O ne "MSWin32"){
@@ -36,7 +36,7 @@ if(defined($ARGV[0])){
 	chomp($mm_ip);
 }
 
-my $version = "0.2";
+my $version = "0.3";
 my $username   = "admin";
 my $password   = "";
 my $path_suffix = "v1/configuration/object/";
@@ -209,6 +209,7 @@ sub grab_show_tech{
 		my $pid = fork();
 		if($pid == 0){
 			&fork_show_tech($ip);
+			exit;
 		}
 	}
 
@@ -265,8 +266,8 @@ sub decode_hierarchy{
 	}elsif($current_path eq '/'){
 		$current_path .= $hier{name};
 	}elsif($hier{name} eq 'mm'){
-    		# dont touch backup mm
-    		return;
+# dont touch backup mm
+		return;
 	}else{
 		$current_path .= '/' . $hier{name};
 	}
@@ -410,23 +411,47 @@ sub get_command(){
 	my %cmd_result;
 	$cmd_result{cmd} = $argu{cmd};
 
-
-	foreach my $ip (@ips){
-		my $time_before = time;
-
-		&debug("Fetching " . $argu{cmd} . " from " . $ip, 2);
-
-		my $curl_output = $api_int->request(ctrl_ip => $ip, 
-				cmd     => $argu{cmd});	
+	my @kids;
 
 
-		&debug("Command output for $ip\n" . $curl_output, 4);
 
-		&debug("Command took " . (time - $time_before) . " seconds to run", 3);
+	for(my $i = 0; $i < @ips; $i++){
+		my $pid = open($kids[$i], "-|");
 
-		$cmd_result{out}{$ip} = $curl_output;	
+		if(!defined($pid)){
+			die "Failed to fork: $!";
+		}
+
+		if(!$pid){
+			# CHILD
+
+			my $time_before = time;
+
+			my $curl_output = $api_int->request(ctrl_ip => $ips[$i], 
+					cmd     => $argu{cmd});	
+
+			# printing to FH and adding controller IP at the end of the string
+			print $curl_output . "CTRL_IP=$ips[$i] ";
+
+			&debug("Fetching " . $argu{cmd} . " from " . $ips[$i], 2);
+
+			&debug("Command took " . (time - $time_before) . " seconds to run", 3);
+			exit;
+		}
+
 
 	}
+
+	foreach my $fh (@kids){
+		my @lines = <$fh>;
+		my $line = join('', @lines);
+
+		# Removing Controller IP at the end of the string
+		$line =~ s/CTRL_IP=([^\s]+) //;
+		my $ip = $1;
+		$cmd_result{out}{$ip} = $line;
+	}
+
 
 
 	return \%cmd_result;
@@ -446,7 +471,9 @@ sub exec(){
 
 	my $time_before = time;
 
-	return $api_int->request(%argu);
+	$curl_output = $api_int->request(%argu);
+
+	return $curl_output;
 
 
 }
@@ -457,7 +484,7 @@ sub debug(){
 	my $lvl = shift;
 
 	if($dbg > $lvl){
-		print "DEBUG: " . $txt . "\n";
+		print STDERR "DEBUG: " . $txt . "\n";
 	}
 
 }
