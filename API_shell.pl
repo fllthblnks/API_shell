@@ -1,5 +1,8 @@
 #!/usr/bin/perl
 # ArubaOS 8.0 API Shell
+#
+# vim: ts=4 sts=4 et sw=4 ft=perl
+#
 
 use strict;
 use warnings 'all';
@@ -16,6 +19,7 @@ use lib '.';
 use shellModules::DispManager;
 use shellModules::connManager;
 use shellModules::Plotter;
+use shellModules::cliHelper;
 use Chart::Gnuplot;		# Needs to be installed
 use Date::Parse;
 
@@ -28,74 +32,55 @@ use Time::HiRes qw(time);
 
 use constant DATETIME => strftime("%Y-%m-%d_%H-%M-%S", localtime);
 
-my $mm_ip;
-my $standalone_mode = 0;
-
-
-if(defined($ARGV[0])){ 
-    if($ARGV[0] eq "-s"){
-        $standalone_mode = 1;
-        &read_standalone($ARGV[1]);
-    }else{
-        $mm_ip = $ARGV[0];
-    }
-}else{
-    print "MM IP address: ";
-    $mm_ip = <STDIN>;
-    chomp($mm_ip);
-}
+# Global CLI object. Put new user related globals in this
+my $cli = shellModules::cliHelper->new();
+$cli->validate();
 
 my $version = "0.4";
-my $username   = "admin";
-my $password   = "";
 my $path_suffix = "v1/configuration/object/";
 my $cookie_file = "cookie.dat";
 
-my $dbg = 0;
 my %UID;
 my %devices;
 my $now; 
 my $cur_path = '/md';
 
-
 my %raw_data;
 
-
-&request_creds;
-
-
+my $username;
+my $password;
+$cli->get_username_password(\$username, \$password);
 
 # dbg level > 5 will set tracing in connManager for request/response
-my $api_int = shellModules::connManager->new($username, $password, $path_suffix, $cookie_file, $dbg);
+my $api_int = shellModules::connManager->new($username, $password, $path_suffix, $cookie_file, $cli->get_dbg_level());
 
 
-if($standalone_mode == 1){
-
+if($cli->is_standalone()){
+    $cli->read_standalone_file(\%devices);
+    print(Dumper(\%devices)); 
 
 }else{
-
-
-# Get MM's hostname
-    my %tmp = %{decode_json(&exec(method     => 'GET',
-                ctrl_ip         => $mm_ip,
-                command_url => 'hostname'))};
+    my $mm_ip = $cli->get_mm_ip();
+    
+    # Get MM's hostname
+    my %tmp = %{decode_json(&exec(method      => 'GET',
+                                  ctrl_ip     => $mm_ip,
+                                  command_url => 'hostname'))};
 
     $devices{'/mm/mynode'}{Name} = $tmp{"_data"}{"hostname"}{"hostname"};
 
-    &decode_hierarchy(&exec(method     => 'GET',
-                ctrl_ip         => $mm_ip,
-                command_url => 'node_hierarchy'), '');
-
+    &decode_hierarchy(&exec(method      => 'GET',
+                            ctrl_ip     => $mm_ip,
+                            command_url => 'node_hierarchy'), '');
 
     &update_switches();
-
     &get_time_offset();
     &get_debugged_users();
 }
 
 print "\n\nWelcome to API_shell v$version\n";
 print "Send feedback to Guillaume Germain (ggermain at hpe.com)\n";
-if($standalone_mode == 1){
+if($cli->is_standalone()){
     print "Running in standalone mode\n";
 }else{
 }
@@ -117,36 +102,34 @@ while(1){
 
     &update_switches();
 
-    if($cmd =~ s/ssh//){ &start_ssh($cmd); 
-}elsif($cmd =~ s/^cd //){ $cur_path = $cmd; &get_debugged_users();
-}elsif($cmd eq "exit"){ exit; 
-}elsif($cmd =~ s/^find_ap //){ &find_AP($cmd);
-}elsif($cmd =~ s/^find_user_mac //){ &find_User($cmd, 'mac-addr');
-}elsif($cmd eq "plot"){ &plot_image(); 
-}elsif($cmd eq "show tech-support"){ 
-    if($^O eq "MSWin32"){
-        print "Sorry, this function is not supported on Windows\n";
-    }else{
-        $now = DATETIME; 
-        &grab_show_tech();	
+        if($cmd =~ s/ssh//){ &start_ssh($cmd); 
+    }elsif($cmd =~ s/^cd //){ $cur_path = $cmd; &get_debugged_users();
+    }elsif($cmd eq "exit"){ exit; 
+    }elsif($cmd =~ s/^find_ap //){ &find_AP($cmd);
+    }elsif($cmd =~ s/^find_user_mac //){ &find_User($cmd, 'mac-addr');
+    }elsif($cmd eq "plot"){ &plot_image(); 
+    }elsif($cmd eq "show tech-support"){ 
+        if($^O eq "MSWin32"){
+            print "Sorry, this function is not supported on Windows\n";
+        }else{
+            $now = DATETIME; 
+            &grab_show_tech();	
+        }
     }
-}
-else{
+    else{
 
-    if($cmd =~ /ap-name (\S+)/){
-        &decode_command(&get_command(ctrl_ip => [&find_AP($1)],
-                    cmd     => $cmd));
-    }elsif($cmd =~ /client-mac (\S+)/){
-        &decode_command(&get_command(ctrl_ip => [&find_User($1, 'mac-addr', 'Current switch')],
-                    cmd     => $cmd));
+        if($cmd =~ /ap-name (\S+)/){
+            &decode_command(&get_command(ctrl_ip => [&find_AP($1)],
+                                         cmd     => $cmd));
+        }elsif($cmd =~ /client-mac (\S+)/){
+            &decode_command(&get_command(ctrl_ip => [&find_User($1, 'mac-addr', 'Current switch')],
+                                         cmd     => $cmd));
 
-    }else{
-        &decode_command(&get_command(ctrl_ip => [&ip_list_by_path()],
-                    cmd     => $cmd));
-
-
+        }else{
+            &decode_command(&get_command(ctrl_ip => [&ip_list_by_path()],
+                                         cmd     => $cmd));
+        }
     }
-}
 }
 
 
@@ -158,7 +141,6 @@ sub ip_list_by_path{
     if(defined($arg)){
         $path = $arg;
     }
-
 
     my @ips;
 
@@ -198,6 +180,7 @@ sub fork_show_tech{
 
 sub grab_show_tech{
     my $ctrl_ip = shift;
+    my $mm_ip = $cli->get_mm_ip();
 
     `mkdir -p ./show_tech`;
 
@@ -218,16 +201,11 @@ sub grab_show_tech{
             exit;
         }
     }
-
-
 }
-
-
-
 
 sub start_ssh{
     my $name = shift;
-    my $ip = $mm_ip;
+    my $ip = $cli->get_mm_ip();
     $name =~ s/^\ //;
 
     if(defined($name)){
@@ -245,7 +223,6 @@ sub start_ssh{
 
         $ssh->login($username, $password);
 
-
         use Term::ReadKey;
         ReadMode('raw');
         $ssh->shell;
@@ -256,10 +233,6 @@ sub start_ssh{
     }
 
 }
-
-
-
-
 
 
 sub decode_hierarchy{
@@ -277,16 +250,13 @@ sub decode_hierarchy{
         $current_path .= '/' . $hier{name};
     }
 
-
     my @childnodes = @{$hier{childnodes}};
 
     foreach my $cn (@childnodes){
-
         &decode_hierarchy(encode_json($cn), $current_path);
     }
 
     my @devices = @{$hier{devices}};
-
 
     foreach my $dv (@devices){
         &decode_hierarchy_device(encode_json($dv), $current_path);
@@ -300,37 +270,13 @@ sub decode_hierarchy_device{
     my $current_pat = shift;
     my %dev = %{decode_json($jso)};
 
-# Skip MMs
-#if($current_pat eq "/mm"){ return; }
+    # Skip MMs
+    if($current_pat eq "/mm"){ return; }
 
     $devices{$current_pat . '/' . $dev{mac}}{mac}    = $dev{mac};
     $devices{$current_pat . '/' . $dev{mac}}{type}   = $dev{type};
     $devices{$current_pat . '/' . $dev{mac}}{Name}   = $dev{name};
     $devices{$current_pat . '/' . $dev{mac}}{Status} = "down";
-
-
-}
-
-
-
-
-# Request user credentials for both SSH and WebUI_API
-sub request_creds{
-    if($password eq ""){
-        print "\nPlease input your credentials.\n";
-        print "Username [$username]: ";
-        my $us = <STDIN>;
-        chomp($us);
-        if($us ne ""){ $username = $us; }
-
-        print "Password: ";
-        ReadMode 2;
-        $password = <STDIN>;
-        ReadMode 0;
-        chomp($password);
-    }
-
-
 
 }
 
@@ -348,14 +294,13 @@ sub display_dashboard(){
 
     foreach my $dev_path (keys %devices){
         if($devices{$dev_path}{Status} eq "up"){
-# Process cpuload info for controller
+            # Process cpuload info for controller
             my %cpu_res = %{decode_json($cpu{out}{$devices{$dev_path}{ctrl_ip}})};
             my @cpu_perc = split(" ", $cpu_res{'_data'}[0]);
             $cpu_perc[5] =~ s/\%//;
             $devices{$dev_path}{CPU} = sprintf("%.1f", (100 - $cpu_perc[5])) . '%';
 
-
-# Process memory info for controller
+            # Process memory info for controller
             my %mem_res = %{decode_json($mem{out}{$devices{$dev_path}{ctrl_ip}})};
             $mem_res{'_data'}[0] =~ s/\,//ig;
                 my @mem_out = split(" ", $mem_res{'_data'}[0]);
@@ -363,17 +308,13 @@ sub display_dashboard(){
             $devices{$dev_path}{MEM} = $mem_perc;
         }
 
-
-
         my %f = %{$devices{$dev_path}};
         push(@data, \%f);
 
     }
 
-
-# Print the data
+    # Print the data
     shellModules::DispManager->print_header_and_table(\@meta, \@data, [], \%raw_data);
-
 
 }
 
@@ -382,9 +323,9 @@ sub find_User(){
     my $info = shift;
     my $info_type = shift;
     my $info_needed = shift;
+    my $mm_ip = $cli->get_mm_ip();
 
     my $cmd = "show global-user-table list $info_type $info";
-
 
     &debug("Searching for user $info", 2);
     my %res = %{&get_command(ctrl_ip => [$mm_ip],
@@ -413,6 +354,7 @@ sub find_User(){
 
 
 sub update_switches(){
+    my $mm_ip = $cli->get_mm_ip();
     my %result_sw_debug = %{&get_command(ctrl_ip => [$mm_ip],
             cmd	    => 'show switches debug')};
 
@@ -464,22 +406,18 @@ sub update_switches(){
 
 sub find_AP(){
     my $ap_name = shift;
+    my $mm_ip = $cli->get_mm_ip();
 
+    my $cmd = "show ap database | include $ap_name";
     my %result = %{&get_command(ctrl_ip => [$mm_ip],
-            cmd     => "show ap database | include $ap_name")};
-
-
+                                cmd     => $cmd)};
 
 
     my %res = %{decode_json($result{out}{$mm_ip})};
-
-
     my @ap_list = @{$res{"AP Database"}};			
-
 
     for(my $i = 0; $i < @ap_list; $i++){
         my %ap = %{$ap_list[$i]};
-
 
         if($ap_name eq $ap{Name}){
             if($ap{Status} =~ /^Up/){
@@ -498,7 +436,6 @@ sub find_AP(){
 
 sub get_command(){
     my (%argu) = @_;	
-
 
     $argu{cmd} =~ s/\s/\+/ig;
 
@@ -551,16 +488,11 @@ sub get_command(){
         my $ip = $1;
         $cmd_result{out}{$ip} = $line;
     }
-
-
-
     return \%cmd_result;
 }
 
 sub decode_command(){
     shellModules::DispManager->print_cmd(shift(), \%raw_data);
-
-
 }
 
 
@@ -571,16 +503,10 @@ sub decode_command(){
 sub exec(){
     my (%argu) = @_;
     my $curl_output;
-
-
-
     my $time_before = time;
 
     $curl_output = $api_int->request(%argu);
-
     return $curl_output;
-
-
 }
 
 
@@ -588,15 +514,15 @@ sub debug(){
     my $txt = shift;
     my $lvl = shift;
 
-    if($dbg > $lvl){
+    if($cli->get_dbg_level() > $lvl){
         print STDERR "DEBUG: " . $txt . "\n";
     }
-
 }
 
 
 
 sub get_debugged_users{
+    my $mm_ip = $cli->get_mm_ip();
 
     my %r = %{decode_json(&exec(command_url => 'log_lvl_user_debug',
                 ctrl_ip => $mm_ip,
@@ -617,30 +543,6 @@ sub get_debugged_users{
     }
 }
 
-
-sub read_standalone(){
-    my $file;
-
-    if(defined($_[0])){
-        $file = $_[0];
-    }else{
-        $file = "standalone_ip_list";
-    }
-
-    open(FIC, $file);
-
-    foreach my $line (<FIC>){
-        chomp($line);
-        my @a = split(",", $line);
-        $devices{'/md/' . $a[0]}{Name} = $a[0];
-        $devices{'/md/' . $a[0]}{ctrl_ip} = $a[1];
-    }
-
-    close(FIC);
-
-
-
-}
 
 
 sub plot_image(){
