@@ -1,3 +1,4 @@
+# vim: ts=4 sts=4 et sw=4 ft=perl
 package shellModules::connManager;
 
 use strict;
