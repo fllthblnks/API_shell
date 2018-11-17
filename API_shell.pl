@@ -546,7 +546,7 @@ sub get_debugged_users{
 
 
 sub plot_image(){
-
+    my $mm_ip = $cli->get_mm_ip();
     my $pid = fork();
     if($pid == 0){
 
