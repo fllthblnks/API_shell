@@ -98,6 +98,7 @@ while(1){
     my $prompt = "API_shell $cur_path> ";
     my $cmd = $term->readline($prompt);
 
+    next if not defined($cmd);
     if($cmd eq "" || $cmd eq " "){ next; }
 
     &update_switches();
@@ -183,7 +184,6 @@ sub grab_show_tech{
     my $mm_ip = $cli->get_mm_ip();
 
     `mkdir -p ./show_tech`;
-
 
     my @ips;
     push(@ips, $mm_ip);
