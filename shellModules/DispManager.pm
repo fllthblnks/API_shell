@@ -1,6 +1,6 @@
 package shellModules::DispManager;
 use strict;
-use warnings;
+use warnings 'all';
 #use Data::Dumper;
 use JSON;
 use Term::ANSIColor qw(:constants);
@@ -79,56 +79,78 @@ sub print_cmd{
 
 
 	if(@meta > 0){
-		foreach my $col (@meta){
-			$col_size{$col} = &size(\@info, $col);
-		}
 
-
-# Print header
-		foreach my $d (@meta){
-			if($^O ne "MSWin32"){
-				print ON_WHITE, BLACK, sprintf("%-" . ($col_size{$d}+2) . "s", $d), RESET, " ";
-			}else{
-				print sprintf("%-" . ($col_size{$d}+3) . "s", $d);
-			}
-		}
-		print "\n";
-
-# Print content for each line
-		for(my $e = 0; $e < @info; $e++){
-			my %c = %{$info[$e]};
-#print %c;
-			foreach my $d (@meta){
-				if(defined($c{$d})){
-					&prnt(sprintf("%-" . ($col_size{$d}+3) . "s", $c{$d}), \%raw_data);
-				}else{
-					&prnt(sprintf("%-" . ($col_size{$d}+3) . "s", " "), \%raw_data);
-				}
-
-			}
-			print "\n";
-		}
-
-		print "\n";
-# Print data
-		if(@data){
-			foreach my $d (@data){
-				print $d . "\n";
-			}
-		}
+		print_header_and_table(\@meta, \@info, \@data, \%raw_data);
 
 	}else{
-		foreach my $ip (keys %comp){
-			my @d = @{$comp{$ip}{data}};
-			foreach my $line (@d){
-				print $ip . " " . $line  . "\n"; 
-			}
-		}
 
+		print_data(\%comp, \%raw_data);
 	}
 
 	print "\n";
 }
+
+sub print_header_and_table(){
+	my $self = shift;
+	my @meta = @{shift()};
+	my @info = @{shift()};
+	my @data = @{shift()};
+	my %raw_data = %{shift()};
+	my %col_size;
+
+	foreach my $col (@meta){
+		$col_size{$col} = &size(\@info, $col);
+	}
+
+
+# Print header
+	foreach my $d (@meta){
+		if($^O ne "MSWin32"){
+			print ON_WHITE, BLACK, sprintf("%-" . ($col_size{$d}+2) . "s", $d), RESET, " ";
+		}else{
+			print sprintf("%-" . ($col_size{$d}+3) . "s", $d);
+		}
+	}
+	print "\n";
+
+# Print content for each line
+	for(my $e = 0; $e < @info; $e++){
+		my %c = %{$info[$e]};
+#print %c;
+		foreach my $d (@meta){
+			if(defined($c{$d})){
+				&prnt(sprintf("%-" . ($col_size{$d}+3) . "s", $c{$d}), \%raw_data);
+			}else{
+				&prnt(sprintf("%-" . ($col_size{$d}+3) . "s", " "), \%raw_data);
+			}
+
+		}
+		print "\n";
+	}
+
+	if(@data){
+		foreach my $d (@data){
+			print $d . "\n";
+		}
+	}
+
+
+	print "\n";
+}
+
+sub print_data(){
+	my %comp = %{shift()};
+	my %raw_data = %{shift()};
+
+	foreach my $ip (keys %comp){
+		my @d = @{$comp{$ip}{data}};
+		foreach my $line (@d){
+			print $ip . " " . $line  . "\n"; 
+		}
+	}
+
+}
+
 
 
 
