@@ -1,7 +1,8 @@
+# vim: ts=4 sts=4 et sw=4 ft=perl
 package shellModules::connManager;
 
 use strict;
-use warnings;
+use warnings 'all';
 
 require LWP;
 use LWP::UserAgent;
@@ -10,6 +11,8 @@ use HTTP::Cookies;
 
 use constant TRACE_DBG_LEVEL => 5;
 use constant ALWAYS_TRACE => 1;
+use constant MAX_TIMEOUT => 10;
+
 
 sub new{
 	my $class = shift;
@@ -55,6 +58,7 @@ sub request{
 
 	do{
 	my $ua = $self->{user_agent};
+	$ua->timeout(MAX_TIMEOUT);
 	my $UID = &get_UID($self, $argu{ctrl_ip});
 
 
@@ -63,6 +67,10 @@ sub request{
 		$url = "https://" . $argu{ctrl_ip} . ':4343/v1/configuration/showcommand?json=1&command=' . $argu{cmd} . "&UIDARUBA=$UID";
 	}elsif(defined($argu{config_path})){
 		$url = "https://" . $argu{ctrl_ip} . ":4343/" . $self->{path_suffix} . $argu{command_url} . "?config_path=" . $argu{config_path} . "&UIDARUBA=$UID";
+    }elsif(defined($argu{full_url})){
+        # This is to be used to gather show tech-supports
+        $ua->timeout(180);
+        $url = "https://" . $argu{ctrl_ip} . ":4343/" . $argu{full_url} . "&UIDARUBA=$UID";
 	}else{
 		$url = "https://" . $argu{ctrl_ip} . ":4343/" . $self->{path_suffix} . $argu{command_url} . "?UIDARUBA=$UID";
 	}
@@ -159,8 +167,14 @@ sub login_to_controller{
 		return 1;
 	}
 
+	my $content = $response->decoded_content();
 
-	print STDERR "Unknown issue logging into the controller\n";
+	$self->trace("-------- ERROR LOGGING INTO CONTROLLER ------", ALWAYS_TRACE);
+        $self->trace($url, ALWAYS_TRACE);
+        $self->trace($content, ALWAYS_TRACE);
+
+
+	print STDERR "Unknown issue logging into the controller $ip\n";
 	exit;
 	
 }
