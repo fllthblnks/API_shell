@@ -62,6 +62,10 @@ sub request{
 	my $UID = &get_UID($self, $argu{ctrl_ip});
 
 
+    if(!defined($argu{method})){
+        $argu{method} = 'GET';
+    }
+
 	if(defined($argu{cmd})){
 		$argu{cmd} =~ s/\s/\+/ig;
 		$url = "https://" . $argu{ctrl_ip} . ':4343/v1/configuration/showcommand?json=1&command=' . $argu{cmd} . "&UIDARUBA=$UID";
@@ -76,107 +80,118 @@ sub request{
 	}
 
 	$self->trace($url);
-	my $req = HTTP::Request->new(GET => $url);
-	$req->header( 'Content-Type' => 'application/json' );
+    
+    my $req; 
+    if($argu{method} eq "GET"){
+	    $req = HTTP::Request->new(GET => $url);
+    }
+    else{
+        $req = HTTP::Request->new(POST => $url);
+    }
+    if(defined($argu{'content-type'})){
+        $req->header( 'Content-Type' => $argu{'content-type'} );
+    }
+    else{
+        $req->header( 'Content-Type' => 'application/json' );
+    }
 
+    my $response = $ua->request($req);
+    $self->trace($response);
 
-	my $response = $ua->request($req);
-	$self->trace($response);
+    if($response->is_success() ){
+        my $content = $response->decoded_content();
+# If we look at logs on the controller and the "Error" string is there, this will trigger. Need to find a better way to do this
+#if ($content =~ /Error/){
+#	$self->trace("-------- ERROR ------", ALWAYS_TRACE);
+#	$self->trace($url, ALWAYS_TRACE);
+#	$self->trace($content, ALWAYS_TRACE);
+#}
+        return $content;
+    }
 
-	if($response->is_success() ){
-		my $content = $response->decoded_content();
-		# If we look at logs on the controller and the "Error" string is there, this will trigger. Need to find a better way to do this
-    		#if ($content =~ /Error/){
-      		#	$self->trace("-------- ERROR ------", ALWAYS_TRACE);
-      		#	$self->trace($url, ALWAYS_TRACE);
-      		#	$self->trace($content, ALWAYS_TRACE);
-    		#}
-		return $content;
-	}
+    &login_to_controller($self, $argu{ctrl_ip});
 
-	&login_to_controller($self, $argu{ctrl_ip});
-
-	}while(1);
+    }while(1);
 
 }
 
 
 sub get_UID{
-	my $self = shift;
-	my $ip   = shift;
+    my $self = shift;
+    my $ip   = shift;
 
 
-	if(defined($self->{hosts}->{$ip}{UID})){
-                return $self->{hosts}{$ip}{UID};
-	}else{
-		&login_to_controller($self, $ip);
-		return &read_cookie($self, $ip);
-	}
+    if(defined($self->{hosts}->{$ip}{UID})){
+        return $self->{hosts}{$ip}{UID};
+    }else{
+        &login_to_controller($self, $ip);
+        return &read_cookie($self, $ip);
+    }
 
 }
 
 
 sub read_cookie{
-	my $self = shift;
-	my $ip   = shift;
+    my $self = shift;
+    my $ip   = shift;
 
 
-	open(CKI, $self->{cookie_file});
+    open(CKI, $self->{cookie_file});
 
-	foreach my $line (<CKI>){
-		if($line =~ /$ip/){
-			$line =~ /SESSION\=([^;]+)/;
-			$self->{hosts}{$ip}{UID} = $1;
-		}
-	}	
+    foreach my $line (<CKI>){
+        if($line =~ /$ip/){
+            $line =~ /SESSION\=([^;]+)/;
+            $self->{hosts}{$ip}{UID} = $1;
+        }
+    }	
 
-	close(CKI);
+    close(CKI);
 
-	return $self->{hosts}{$ip}{UID};
+    return $self->{hosts}{$ip}{UID};
 }
 
 
 sub login_to_controller{
-	my $self = shift;
-	my $ip   = shift;
+    my $self = shift;
+    my $ip   = shift;
 
 
 
 
-	my $url = "https://$ip:4343/screens/wms/wms.login";
+    my $url = "https://$ip:4343/screens/wms/wms.login";
 
-	my $ua = $self->{user_agent};
-
-
-	my $response = $ua->post($url, {opcode   => 'login',
-					url      => 'login.html',
-					needxml  => '0',
-					uid      => $self->{username},
-					passwd   => $self->{password} });
+    my $ua = $self->{user_agent};
 
 
-
-	if(defined($response->header('set-cookie'))){
-		if($response->header('set-cookie') =~ /SESSION\=\;/){
-			print STDERR "Bad credentials. Please run the program again\n";
-			exit;
-		}
-		$response->header('set-cookie') =~ /SESSION\=([^;]+)/;
-		$self->{hosts}{$ip}{UID} = $1;
-		$self->{cookie_jar}->save();
-		return 1;
-	}
-
-	my $content = $response->decoded_content();
-
-	$self->trace("-------- ERROR LOGGING INTO CONTROLLER ------", ALWAYS_TRACE);
-        $self->trace($url, ALWAYS_TRACE);
-        $self->trace($content, ALWAYS_TRACE);
+    my $response = $ua->post($url, {opcode   => 'login',
+            url      => 'login.html',
+            needxml  => '0',
+            uid      => $self->{username},
+            passwd   => $self->{password} });
 
 
-	print STDERR "Unknown issue logging into the controller $ip\n";
-	exit;
-	
+
+    if(defined($response->header('set-cookie'))){
+        if($response->header('set-cookie') =~ /SESSION\=\;/){
+            print STDERR "Bad credentials. Please run the program again\n";
+            exit;
+        }
+        $response->header('set-cookie') =~ /SESSION\=([^;]+)/;
+        $self->{hosts}{$ip}{UID} = $1;
+        $self->{cookie_jar}->save();
+        return 1;
+    }
+
+    my $content = $response->decoded_content();
+
+    $self->trace("-------- ERROR LOGGING INTO CONTROLLER ------", ALWAYS_TRACE);
+    $self->trace($url, ALWAYS_TRACE);
+    $self->trace($content, ALWAYS_TRACE);
+
+
+    print STDERR "Unknown issue logging into the controller $ip\n";
+    exit;
+
 }
 
 

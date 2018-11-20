@@ -40,8 +40,6 @@ sub usage {
     print "           mc01,1.2.3.4\n";
     print "           mc02,5.6.7.8\n";
     print "\n";
-    print "This script requires enable bypass to be configured in the controllers\n";
-    print "\n";
 
     die($msg . "\n\n") if $dont_die == 0;
     exit(1);
