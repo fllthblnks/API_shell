@@ -106,7 +106,7 @@ while(1){
 }elsif($cmd =~ s/^find_ap //){ &find_AP($cmd);
 }elsif($cmd =~ s/^find_user_mac //){ &find_User($cmd, 'mac-addr');
 }elsif($cmd eq "plot"){ &plot_image(); 
-}elsif($cmd eq "show tech-support"){ print "You should use 'api_shell get logs' instead.\n"; next; }
+}elsif($cmd eq "show tech-support"){ print "You should use 'api_shell get logs' instead.\n"; next; 
 }elsif($cmd eq "api_shell get logs"){ 
     if($^O eq "MSWin32"){
         print "Sorry, this function is not supported on Windows\n";
