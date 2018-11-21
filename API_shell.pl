@@ -16,6 +16,9 @@ use shellModules::connManager;
 use shellModules::plotter;
 use shellModules::cliHelper;
 use Date::Parse;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use Time::HiRes qw(time);
+use File::Path qw(make_path);
 
 use JSON;               # Needs to be installed
 if($^O ne "MSWin32"){
@@ -28,8 +31,6 @@ if($^O ne "MSWin32"){
 # LWP::UserAgent
 # Char::Gnuplot (optional)
 
-
-use Time::HiRes qw(time);
 
 use constant DATETIME => strftime("%Y-%m-%d_%H-%M-%S", localtime);
 
@@ -105,7 +106,8 @@ while(1){
 }elsif($cmd =~ s/^find_ap //){ &find_AP($cmd);
 }elsif($cmd =~ s/^find_user_mac //){ &find_User($cmd, 'mac-addr');
 }elsif($cmd eq "plot"){ &plot_image(); 
-}elsif($cmd eq "show tech-support"){ 
+}elsif($cmd eq "show tech-support"){ print "You should use 'api_shell get logs' instead.\n"; next; }
+}elsif($cmd eq "api_shell get logs"){ 
     if($^O eq "MSWin32"){
         print "Sorry, this function is not supported on Windows\n";
     }else{
@@ -174,11 +176,36 @@ sub fork_show_tech{
 
     if(!defined($ctrl_ip)){ return; }
 
-    print Dumper &exec(
+    my $out = &exec(
             ctrl_ip     => $ctrl_ip,
-            full_url    => '/screens/cmnutil/execFPCliCommand.xml?show%20tech-support-web-hook',
+            full_url    => 'screens/cmnutil/execFPCliCommand.xml?show%20tech-support-web-hook'
             ); 
 
+
+    if($out =~ /SUCCESS/){
+        my $logs = &exec(
+            ctrl_ip     => $ctrl_ip,
+            full_url    => 'screens/cmnutil/log-download.tar',
+            method      => 'POST',
+            'content-type' => 'application/x-www-form-urlencoded',
+            args        => [ 'operand' => '', operand2 => 'get-logs', operand3 => 'tech-support'],
+            exclude_UID => 1
+            ); 
+
+        make_path("show_tech");
+    
+        my $filename = "./show_tech/tar_logs_" . $now . "_" . $ctrl_ip . ".tar.gz";
+
+
+        my $z = new IO::Compress::Gzip($filename) or die "$ctrl_ip gzip failed: $GzipError\n";   
+ 
+        $z->write($logs);
+        $z->close();
+
+        print "$ctrl_ip logs succesfully fetched (" . length($logs) . " bytes)\n";
+    }else{
+        print "$ctrl_ip unable to fetch the logs\n";
+    }
     return;
 }
 
@@ -193,17 +220,24 @@ sub grab_show_tech{
     my @ips = &ip_list_by_path();
 
 
-    print "Fetching show-tech from " .  ($#ips+1) . " controllers in the background.\n";
+    print "Fetching show-tech from " .  ($#ips+1) . " controllers. Please wait... This will take a while.\n";
 
-    foreach my $ip (@ips){
-        my $pid = fork();
+    my @kids;
+
+    for(my $i = 0; $i < @ips; $i++){
+        my $pid = open($kids[$i], "-|");
         if($pid == 0){
-            &fork_show_tech($ip);
+            &fork_show_tech($ips[$i]);
             exit;
         }
     }
 
+    foreach my $fh (@kids){
+        my @lines = <$fh>;
+        print @lines;
+    }
 
+    return;
 }
 
 
