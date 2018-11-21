@@ -11,7 +11,7 @@ use HTTP::Cookies;
 
 use constant TRACE_DBG_LEVEL => 5;
 use constant ALWAYS_TRACE => 1;
-use constant MAX_TIMEOUT => 10;
+use constant MAX_TIMEOUT => 30;
 
 
 sub new{
@@ -74,38 +74,40 @@ sub request{
     }elsif(defined($argu{full_url})){
         # This is to be used to gather show tech-supports
         $ua->timeout(180);
-        $url = "https://" . $argu{ctrl_ip} . ":4343/" . $argu{full_url} . "&UIDARUBA=$UID";
-	}else{
-		$url = "https://" . $argu{ctrl_ip} . ":4343/" . $self->{path_suffix} . $argu{command_url} . "?UIDARUBA=$UID";
-	}
+        if($argu{method} eq "GET"){
+            $url = "https://" . $argu{ctrl_ip} . ":4343/" . $argu{full_url} . "&UIDARUBA=$UID";
+        }else{
+            $url = "https://" . $argu{ctrl_ip} . ":4343/" . $argu{full_url};
+        }
+    }else{
+        $url = "https://" . $argu{ctrl_ip} . ":4343/" . $self->{path_suffix} . $argu{command_url} . "&UIDARUBA=$UID";
+    }
 
-	$self->trace($url);
-    
-    my $req; 
-    if($argu{method} eq "GET"){
-	    $req = HTTP::Request->new(GET => $url);
+    $self->trace($url);
+
+
+
+    my $req;
+    my $response;
+    if($argu{method} eq "POST"){
+        $response = $ua->post($url, $argu{args}, 'Content-Type' => $argu{'content-type'});
+        
     }
     else{
-        $req = HTTP::Request->new(POST => $url);
-    }
-    if(defined($argu{'content-type'})){
-        $req->header( 'Content-Type' => $argu{'content-type'} );
-    }
-    else{
+        $req = HTTP::Request->new(GET => $url);
         $req->header( 'Content-Type' => 'application/json' );
+        $response = $ua->request($req);
+        
     }
 
-    my $response = $ua->request($req);
+
+
     $self->trace($response);
 
     if($response->is_success() ){
         my $content = $response->decoded_content();
-# If we look at logs on the controller and the "Error" string is there, this will trigger. Need to find a better way to do this
-#if ($content =~ /Error/){
-#	$self->trace("-------- ERROR ------", ALWAYS_TRACE);
-#	$self->trace($url, ALWAYS_TRACE);
-#	$self->trace($content, ALWAYS_TRACE);
-#}
+
+
         return $content;
     }
 
