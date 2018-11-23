@@ -34,6 +34,8 @@ Following modules need to be installed:
 LWP::Protocol::https
 LWP::UserAgent
 JSON
+Date::Parse
+Term::ReadKey
 
 On non-Windows platforms:
 Net::SSH::Perl
