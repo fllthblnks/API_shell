@@ -9,7 +9,7 @@ use Chart::Gnuplot;
 sub new{
     my $class = shift;
     my $self;
-    
+
 
     my $chart = Chart::Gnuplot->new(
             output => "./output.png",

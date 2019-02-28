@@ -43,7 +43,6 @@ sub new{
 	return $self;
 }
 
-
 sub trace{
   my $self = shift;
   my $obj = shift;
@@ -51,7 +50,6 @@ sub trace{
   return if not $always and $self->{dbg_level} < TRACE_DBG_LEVEL;
   print STDERR ("trace: " . Dumper($obj));
 }
-
 
 sub request{
 	my $self = shift;
@@ -158,6 +156,9 @@ sub read_cookie{
 sub login_to_controller{
     my $self = shift;
     my $ip   = shift;
+
+
+
 
     my $url = "https://$ip:4343/screens/wms/wms.login";
 

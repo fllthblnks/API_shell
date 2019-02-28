@@ -28,17 +28,18 @@ sub usage {
     print "Usage: $0 [options] [MM ipaddr]\n";
     print "\n";
     print "Options:\n";
-    print "     -s <file>        file of standalone name,ipaddr to connect to\n";
+    print "     -s <file>        file of standalone controllers to connect to\n";
     print "     -u <username>    Specify ssh/webui username, default is admin\n";
     print "     -p <password>    Specify ssh/webui password, else will be prompted\n";
     print "     -d N             enable debug trace level N (0 to 5)\n";
     print "\n";
     print "Standalone:\n";
-    print "     Create a file with individual standalone controllers, one per line\n";
+    print "     Create a file with individual standalone controllers, one per line.\n";
+    print "     Optionally, you can add a folder for the controller to be in.\n";
     print "\n";
     print "     example:\n";
-    print "           mc01,1.2.3.4\n";
-    print "           mc02,5.6.7.8\n";
+    print "           10.0.0.4,/md/France\n";
+    print "           10.1.0.8,/md/HongKong\n";
     print "\n";
 
     die($msg . "\n\n") if $dont_die == 0;
@@ -78,7 +79,7 @@ sub validate {
     # Either we got an MM IP, or standalone file, or the user gives an MM IP
     if (defined($opts->{mm})) {
         if (defined($opts->{s})) {
-            $self->usage("Error: can't specify -s <ipaddr> and MM IP address together");
+            $self->usage("Error: can't specify -s <filename> and MM IP address together");
         }
         if ($opts->{mm} !~ /$IPV4_RE/) {
             $self->usage("Error: MM IP address $opts->{mm} is invalid");
@@ -181,8 +182,8 @@ sub is_standalone {
 sub read_standalone_file {
     my $self = shift;
     my $opts = $self->{opts};
+    my %out;
 
-    my $devices = shift;
     if (not $self->is_standalone()) {
         die("Not operating in standalone mode");
     }
@@ -192,10 +193,11 @@ sub read_standalone_file {
     foreach my $line (<FIC>){
         chomp($line);
         my @a = split(",", $line);
-        $devices->{'/md/' . $a[0]}{name} = $a[0];
-        $devices->{'/md/' . $a[0]}{ctrl_ip} = $a[1];
+        $out{$a[1] ? $a[1] : '/md'}{ctrl_ip} = $a[0];
     }
     close(FIC);
+
+    return \%out;
 }
 
 #
