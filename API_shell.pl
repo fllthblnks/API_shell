@@ -40,7 +40,7 @@ my $cli = shellModules::cliHelper->new();
 $cli->validate();
 
 
-my $version = "0.4.1";
+my $version = "0.4.2";
 my $path_suffix = "v1/configuration/object/";
 my $cookie_file = "cookie.dat";
 
@@ -62,9 +62,8 @@ my $api_int = shellModules::connManager->new($username, $password, $path_suffix,
 
 if($cli->is_standalone()){
     # Standalone mode
-
     $cli->read_standalone_file(\%devices);
-    print(Dumper(\%devices)); 
+    #print(Dumper(\%devices));
 
 }
 else{
@@ -105,14 +104,21 @@ while(1){
 }elsif($cmd eq "exit"){ exit; 
 }elsif($cmd =~ s/^find_ap //){ &find_AP($cmd);
 }elsif($cmd =~ s/^find_user_mac //){ &find_User($cmd, 'mac-addr');
-}elsif($cmd eq "plot"){ &plot_image(); 
+}elsif($cmd eq "api_shell plot"){ &plot_image(); 
 }elsif($cmd eq "show tech-support"){ print "You should use 'api_shell get logs' instead.\n"; next; 
-}elsif($cmd eq "api_shell get logs"){ 
-    if($^O eq "MSWin32"){
-        print "Sorry, this function is not supported on Windows\n";
-    }else{
+}elsif($cmd =~ /^api_shell/){
+    if($cmd eq "api_shell get logs"){
         $now = DATETIME; 
         &grab_show_tech();	
+    }elsif($cmd =~ /api_shell dashboard/){
+        &display_dashboard($cmd);
+    }
+    else{
+        print "Unknown api_shell command.\n";
+        print "Currently supported:\n";
+        print "\tapi_shell dashboard\n";
+        print "\tapi_shell dashboard all\n";
+        print "\tapi_shell get logs\n";
     }
 }
 else{
@@ -176,29 +182,29 @@ sub fork_show_tech{
 
     if(!defined($ctrl_ip)){ return; }
 
-    my $out = &exec(
+    my $out = $api_int->request(
             ctrl_ip     => $ctrl_ip,
             full_url    => 'screens/cmnutil/execFPCliCommand.xml?show%20tech-support-web-hook'
             ); 
 
 
     if($out =~ /SUCCESS/){
-        my $logs = &exec(
-            ctrl_ip     => $ctrl_ip,
-            full_url    => 'screens/cmnutil/log-download.tar',
-            method      => 'POST',
-            'content-type' => 'application/x-www-form-urlencoded',
-            args        => [ 'operand' => '', operand2 => 'get-logs', operand3 => 'tech-support'],
-            exclude_UID => 1
-            ); 
+        my $logs = $api_int->request(
+                ctrl_ip     => $ctrl_ip,
+                full_url    => 'screens/cmnutil/log-download.tar',
+                method      => 'POST',
+                'content-type' => 'application/x-www-form-urlencoded',
+                args        => [ 'operand' => '', operand2 => 'get-logs', operand3 => 'tech-support'],
+                exclude_UID => 1
+                ); 
 
         make_path("show_tech");
-    
+
         my $filename = "./show_tech/tar_logs_" . $now . "_" . $ctrl_ip . ".tar.gz";
 
 
         my $z = new IO::Compress::Gzip($filename) or die "$ctrl_ip gzip failed: $GzipError\n";   
- 
+
         $z->write($logs);
         $z->close();
 
@@ -220,7 +226,7 @@ sub grab_show_tech{
     my @ips = &ip_list_by_path();
 
 
-    print "Fetching show-tech from " .  ($#ips+1) . " controllers. Please wait... This will take a while.\n";
+    print "Fetching show-tech from devices in $cur_path (" .  ($#ips+1) . " devices). Please wait... This will take a while.\n";
 
     my @kids;
 
@@ -280,6 +286,7 @@ sub start_ssh{
 
 
 sub display_dashboard(){
+ 
 
     my %cpu = %{&get_command(ctrl_ip => [&ip_list_by_path('/')],
             cmd     => 'show cpuload')};
@@ -287,7 +294,14 @@ sub display_dashboard(){
     my %mem = %{&get_command(ctrl_ip => [&ip_list_by_path('/')],
             cmd     => 'show memory')};
 
-    my @meta = ("IP Address", "Name", "Type", "Model", "Version", "Status", "Configuration State", "Config ID", "CrashInfo", "TimeOffset", "CPU", "MEM");
+    my @meta = ("IP Address", "Name", "Type", "Model", "Version", "Status", "Configuration State", "CrashInfo", "TimeOffset", "CPU", "MEM");
+
+    if(defined($_[0])){
+        if($_[0] =~ /all/){
+             @meta = ("IP Address", "MAC", "Name", "Nodepath", "Type", "Location", "Model", "Version", "Status", "Uptime", "Configuration State", "Config ID", "CrashInfo", "Config Sync Time (sec)", "TimeOffset", "CPU", "MEM");
+        }
+    }    
+
     my @data;
     my @ctrl;
 
@@ -398,7 +412,7 @@ sub update_switches(){
         }
 
 
-        foreach my $field (("Name", "Model", "Version", "Status", "IP Address", "CrashInfo", "Config ID", "Configuration State", "Type")){
+        foreach my $field (("IP Address", "MAC", "Name", "Nodepath", "Type", "Location", "Model", "Version", "Status", "Uptime", "Configuration State", "Config ID", "CrashInfo", "Config Sync Time (sec)")){
             if(defined($d{$name}{$field})){
                 $devices{$dev}{$field} = $d{$name}{$field};
             }else{
@@ -520,24 +534,6 @@ sub decode_command(){
 
 
 
-
-# Execute command on device
-sub exec(){
-    my (%argu) = @_;
-    my $curl_output;
-
-
-
-    my $time_before = time;
-
-    $curl_output = $api_int->request(%argu);
-
-    return $curl_output;
-
-
-}
-
-
 sub debug(){
     my $txt = shift;
     my $lvl = shift;
@@ -552,7 +548,7 @@ sub debug(){
 
 sub get_debugged_users{
 
-    my %r = %{decode_json(&exec(
+    my %r = %{decode_json($api_int->request(
                 command_url => 'log_lvl_user_debug',
                 ctrl_ip     => $cli->get_mm_ip(),
                 config_path => $cur_path,
@@ -575,16 +571,61 @@ sub get_debugged_users{
 
 
 sub plot_image(){
+    print "Input command to plot: ";
+    my $cmd = <STDIN>;
+    chomp($cmd);
+    
+    
+    my $plott = shellModules::plotter->new();
+
+
+    my %out = shellModules::dispManager->merge_data(
+            &get_command(
+                ctrl_ip => [&ip_list_by_path()],
+                cmd     => $cmd
+                ), \%raw_data);
+
+
+    
+    if(@{$out{meta}} == 0 ){
+        print "This command cannot be plotted as it outputted as pure text from the API and does not include JSON formatted data\n";
+        return;
+
+    }
+
+    open(OUT, ">./plot_config.txt");
+
+    print OUT "## $cmd\n#\n"; 
+    print OUT "## Sampling Interval\n";
+    print OUT "1\n\n";
+    print OUT "## Number of samples\n";
+    print OUT "120\n\n";
+    print OUT "## Uncomment the line of the columns you want to plot on the graph. Column needs to contain a numerical value.\n";
+    print OUT "## Columns\n";
+    foreach my $i (@{$out{meta}}){
+        print OUT "#" . $i . "\n";
+    }
+
+    print OUT "\n\n";
+    print OUT "## Data to filter on. You probably want to MAC addresses or IP addresses here. Put one per line\n";
+    print OUT "## Filters\n\n";
+
+
+
+    close(OUT); 
+
+    system("nano plot_config.txt");
+
+
 
     my $pid = fork();
     if($pid == 0){
 
-        my $GG = shellModules::Plotter->new();
 
         for(my $i = 0; $i < 120; $i++){
             my %cpu = %{&get_command(
                     ctrl_ip => [$cli->get_mm_ip()],
-                    cmd     => 'show cpuload'
+                    cmd     => $cmd
                     )};
 
 
@@ -593,9 +634,9 @@ sub plot_image(){
             my @cpu_perc = split(" ", $cpu_res{'_data'}[0]);
             $cpu_perc[5] =~ s/\%//;
 
-            $GG->addData(sprintf("%.1f", (100 - $cpu_perc[5])));
-            $GG->printData();
-            $GG->generateImage();
+            $plott->addData(sprintf("%.1f", (100 - $cpu_perc[5])));
+            $plott->printData();
+            $plott->generateImage();
 
             sleep 1;
 
@@ -625,7 +666,7 @@ sub get_time_offset(){
         &debug("Current time at controller " . $devices{$dev_path}{ctrl_ip} . " is " . $ctrl_dtime . " and time offset is " . (str2time($ctrl_dtime) - time), 3);
 
         $devices{$dev_path}{TimeOffset} = sprintf("%.1f", str2time($ctrl_dtime) - time);		
-
+        $raw_data{TimeOffset}{$devices{$dev_path}{ctrl_ip}} = sprintf("%.1f", str2time($ctrl_dtime) - time);
     }
 
 }
