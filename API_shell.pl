@@ -109,7 +109,10 @@ while(1){
 }elsif($cmd =~ /^api_shell/){
     if($cmd eq "api_shell get logs"){
         $now = DATETIME; 
-        &grab_show_tech();	
+        &grab_show_tech();
+    }elsif($cmd =~ /api_shell get crash/){
+        $now = DATETIME;
+        &grab_crash();
     }elsif($cmd =~ /api_shell dashboard/){
         &display_dashboard($cmd);
     }
@@ -119,6 +122,7 @@ while(1){
         print "\tapi_shell dashboard\n";
         print "\tapi_shell dashboard all\n";
         print "\tapi_shell get logs\n";
+        print "\tapi_shell get crash\n";
     }
 }
 else{
@@ -177,6 +181,36 @@ sub ip_list_by_path{
 }
 
 
+sub fork_get_crash{
+    my $ctrl_ip = shift;
+
+    if(!defined($ctrl_ip)){ return; }
+
+    &get_command(ctrl_ip => [$ctrl_ip],
+                 cmd     => 'tar crash');
+
+    my $logs = $api_int->request(
+            ctrl_ip     => $ctrl_ip,
+            full_url    => 'screens/cmnutil/crash.tar',
+            method      => 'POST',
+            'content-type' => 'application/x-www-form-urlencoded',
+            args        => [ 'operand' => '', operand2 => 'get-crash', operand3 => 'tech-support'],
+            exclude_UID => 1
+            );
+
+    make_path("crash_files");
+
+    my $filename = "./show_tech/tar_crash_" . $now . "_" . $ctrl_ip . ".tar.gz";
+
+    my $z = new IO::Compress::Gzip($filename) or die "$ctrl_ip gzip failed: $GzipError\n";   
+
+    $z->write($logs);
+    $z->close();
+
+    print "$ctrl_ip crash dump succesfully fetched (" . length($logs) . " bytes)\n";
+}
+
+
 sub fork_show_tech{
     my $ctrl_ip = shift;
 
@@ -226,7 +260,7 @@ sub grab_show_tech{
     my @ips = &ip_list_by_path();
 
 
-    print "Fetching show-tech from devices in $cur_path (" .  ($#ips+1) . " devices). Please wait... This will take a while.\n";
+    print "Fetching logs from devices in $cur_path (" .  ($#ips+1) . " devices). Please wait... This will take a while.\n";
 
     my @kids;
 
@@ -246,6 +280,49 @@ sub grab_show_tech{
     return;
 }
 
+
+
+sub grab_crash{
+    my $ctrl_ip = shift;
+
+    &update_switches;
+    
+    `mkdir -p ./crash_files`;
+
+
+    my @ips;
+
+    foreach my $p (keys %devices){
+        if($devices{$p}{CrashInfo} eq "yes"){
+            push(@ips, $devices{$p}{ctrl_ip});
+            &debug("Added $p $devices{$p}{ctrl_ip} to list of controllers", 3);       
+        }
+    }
+
+    if(!@ips){
+        print "No crash files on controllers\n";
+        return;
+    }
+
+    print "Fetching crash dump from devices in $cur_path (" .  ($#ips+1) . " devices). Please wait... This will take a while.\n";
+
+    my @kids;
+
+    for(my $i = 0; $i < @ips; $i++){
+        my $pid = open($kids[$i], "-|");
+        if($pid == 0){
+            &fork_get_crash($ips[$i]);
+            exit;
+        }
+    }
+
+    foreach my $fh (@kids){
+        my @lines = <$fh>;
+        print @lines;
+    }
+
+    return;
+}
 
 
 
@@ -286,7 +363,7 @@ sub start_ssh{
 
 
 sub display_dashboard(){
- 
+
 
     my %cpu = %{&get_command(ctrl_ip => [&ip_list_by_path('/')],
             cmd     => 'show cpuload')};
@@ -298,7 +375,7 @@ sub display_dashboard(){
 
     if(defined($_[0])){
         if($_[0] =~ /all/){
-             @meta = ("IP Address", "MAC", "Name", "Nodepath", "Type", "Location", "Model", "Version", "Status", "Uptime", "Configuration State", "Config ID", "CrashInfo", "Config Sync Time (sec)", "TimeOffset", "CPU", "MEM");
+            @meta = ("IP Address", "MAC", "Name", "Nodepath", "Type", "Location", "Model", "Version", "Status", "Uptime", "Configuration State", "Config ID", "CrashInfo", "Config Sync Time (sec)", "TimeOffset", "CPU", "MEM");
         }
     }    
 
@@ -574,8 +651,8 @@ sub plot_image(){
     print "Input command to plot: ";
     my $cmd = <STDIN>;
     chomp($cmd);
-    
-    
+
+
     my $plott = shellModules::plotter->new();
 
 
@@ -586,7 +663,7 @@ sub plot_image(){
                 ), \%raw_data);
 
 
-    
+
     if(@{$out{meta}} == 0 ){
         print "This command cannot be plotted as it outputted as pure text from the API and does not include JSON formatted data\n";
         return;
@@ -659,6 +736,7 @@ sub get_time_offset(){
     foreach my $dev_path (keys %devices){
         if($devices{$dev_path}{'Status'} ne "up"){ next; }
 
+        &debug("Fetching time from " . $devices{$dev_path}{ctrl_ip}, 5);
         my %res = %{decode_json($cmd_tme{out}{$devices{$dev_path}{ctrl_ip}})};
 
         my $ctrl_dtime = $res{'_data'}[0];
